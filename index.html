@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カレンダー</title>
+    <!-- iPhone / GitHub Pages 用 PWA 設定 -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="カレンダー">
+    <meta name="theme-color" content="#ff4d4d">
+
+    <style>
+        body {
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            background-color: #f5f5f7;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+            margin: 0;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+        }
+
+        .input-container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        label {
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        input[type="number"] {
+            width: 80px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 1rem;
+            text-align: center;
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: #0071e3;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #0077ed;
+        }
+
+        .calendar-container {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            min-width: 340px;
+        }
+
+        .calendar-title {
+            font-size: 1.3rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            width: 48px;
+            height: 45px;
+            text-align: center;
+            vertical-align: middle;
+            font-size: 1rem;
+            position: relative;
+        }
+
+        th {
+            font-weight: 600;
+            border-bottom: 2px solid #eee;
+        }
+
+        /* 曜日ヘッダーの色設定 */
+        th:nth-child(1) { color: #dd4b39; } /* 日曜: 赤 */
+        th:nth-child(7) { color: #2ba442; } /* 土曜: 緑 */
+
+        /* 日付セルの基本色設定 */
+        td:nth-child(1) { color: #dd4b39; } /* 日曜クラス: 赤 */
+        td:nth-child(7) { color: #2ba442; } /* 土曜クラス: 緑 */
+
+        /* 祝日・振替休日用のクラス（最優先で赤にする） */
+        td.holiday {
+            color: #dd4b39 !important; 
+            font-weight: bold;
+        }
+
+        /* 祝日名を表示する小さなテキスト */
+        .holiday-name {
+            font-size: 0.6rem;
+            position: absolute;
+            bottom: 2px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: #dd4b39;
+            font-weight: normal;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        td {
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>カレンダー表示ツール</h1>
+
+    <div class="input-container">
+        <div>
+            <label for="year">年：</label>
+            <input type="number" id="year" min="1970" max="2100">
+        </div>
+        <div>
+            <label for="month">月：</label>
+            <input type="number" id="month" min="1" max="12">
+        </div>
+        <button onclick="generateCalendar()">表示</button>
+    </div>
+
+    <div class="calendar-container" id="calendarWrapper" style="display: none;">
+        <div class="calendar-title" id="calendarTitle"></div>
+        <table>
+            <thead>
+                <tr>
+                    <th>日</th><th>月</th><th>火</th><th>水</th><th>木</th><th>金</th><th>土</th>
+                </tr>
+            </thead>
+            <tbody id="calendarBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // 起動時に現在の年月を設定
+        const now = new Date();
+        document.getElementById('year').value = now.getFullYear();
+        document.getElementById('month').value = now.getMonth() + 1;
+
+        // ハッピーマンデー（第何月曜日）の日にちを計算する関数
+        function getHappyMonday(year, month, nth) {
+            const firstDay = new Date(year, month - 1, 1).getDay();
+            let firstMonday = 1 + (1 - firstDay + 7) % 7;
+            if (firstDay === 1) firstMonday = 1;
+            return firstMonday + (nth - 1) * 7;
+        }
+
+        // 春分の日・秋分の日の計算（1980年〜2099年対応）
+        function getEquinoxDay(year, type) {
+            if (type === 'spring') {
+                if (year >= 1980 && year <= 2099) return Math.floor(20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+            } else if (type === 'autumn') {
+                if (year >= 1980 && year <= 2099) return Math.floor(23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+            }
+            return 0;
+        }
+
+        // 指定された年月の祝日オブジェクトを取得する関数
+        function getHolidays(year, month) {
+            const holidays = {}; // { 日: "祝日名" }
+
+            switch (month) {
+                case 1:
+                    holidays[1] = "元日";
+                    holidays[getHappyMonday(year, 1, 2)] = "成人の日";
+                    break;
+                case 2:
+                    holidays[11] = "建国記念の日";
+                    if (year >= 2020) holidays[23] = "天皇誕生日";
+                    break;
+                case 3:
+                    holidays[getEquinoxDay(year, 'spring')] = "春分の日";
+                    break;
+                case 4:
+                    holidays[29] = "昭和の日";
+                    break;
+                case 5:
+                    holidays[3] = "憲法記念日";
+                    holidays[4] = "みどりの日";
+                    holidays[5] = "こどもの日";
+                    break;
+                case 7:
+                    holidays[getHappyMonday(year, 7, 3)] = "海の日";
+                    break;
+                case 8:
+                    holidays[11] = "山の日";
+                    break;
+                case 9:
+                    holidays[getHappyMonday(year, 9, 3)] = "敬老の日";
+                    holidays[getEquinoxDay(year, 'autumn')] = "秋分の日";
+                    break;
+                case 10:
+                    holidays[getHappyMonday(year, 10, 2)] = "スポーツの日";
+                    break;
+                case 11:
+                    holidays[3] = "文化の日";
+                    holidays[23] = "勤労感謝の日";
+                    break;
+                case 12:
+                    if (year < 2019) holidays[23] = "天皇誕生日";
+                    break;
+            }
+
+            // 振替休日の計算
+            const processedHolidays = { ...holidays };
+            for (let day in holidays) {
+                const d = parseInt(day);
+                const dateObj = new Date(year, month - 1, d);
+                if (dateObj.getDay() === 0) { // 日曜日
+                    let substituteDay = d + 1;
+                    while (holidays[substituteDay] || processedHolidays[substituteDay]) {
+                        substituteDay++;
+                    }
+                    processedHolidays[substituteDay] = "振替休日";
+                }
+            }
+
+            // 国民の休日の計算（敬老の日と秋分の日に挟まれた平日）
+            if (month === 9) {
+                const kero = getHappyMonday(year, 9, 3);
+                const shunbun = getEquinoxDay(year, 'autumn');
+                if (shunbun - kero === 2) {
+                    processedHolidays[kero + 1] = "国民の休日";
+                }
+            }
+
+            return processedHolidays;
+        }
+
+        function generateCalendar() {
+            const year = parseInt(document.getElementById('year').value);
+            const month = parseInt(document.getElementById('month').value);
+
+            if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+                alert('正しい年月を入力してください。');
+                return;
+            }
+
+            const firstDay = new Date(year, month - 1, 1);
+            const lastDay = new Date(year, month, 0);
+            const startDayOfWeek = firstDay.getDay();
+            const totalDays = lastDay.getDate();
+
+            const currentHolidays = getHolidays(year, month);
+
+            document.getElementById('calendarTitle').innerText = `${year}年 ${month}月`;
+            const tbody = document.getElementById('calendarBody');
+            tbody.innerHTML = '';
+
+            let dateCounter = 1;
+            
+            for (let i = 0; i < 6; i++) {
+                const row = document.createElement('tr');
+                let hasData = false;
+
+                for (let j = 0; j < 7; j++) {
+                    const cell = document.createElement('td');
+
+                    if (i === 0 && j < startDayOfWeek) {
+                        cell.innerText = '';
+                    } else if (dateCounter > totalDays) {
+                        cell.innerText = '';
+                    } else {
+                        cell.innerText = dateCounter;
+                        
+                        if (currentHolidays[dateCounter]) {
+                            cell.classList.add('holiday');
+                            const nameSpan = document.createElement('span');
+                            nameSpan.classList.add('holiday-name');
+                            nameSpan.innerText = currentHolidays[dateCounter];
+                            cell.appendChild(nameSpan);
+                        }
+
+                        dateCounter++;
+                        hasData = true;
+                    }
+                    row.appendChild(cell);
+                }
+                if (!hasData && i > 0) break;
+                tbody.appendChild(row);
+            }
+
+            document.getElementById('calendarWrapper').style.display = 'block';
+        }
+
+        window.onload = generateCalendar;
+    </script>
+
+    <script>
+        // オフライン利用用（GitHub Pages は https なので利用可能）
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(() => {});
+            });
+        }
+    </script>
+</body>
+</html>
